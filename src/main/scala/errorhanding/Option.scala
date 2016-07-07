@@ -1,5 +1,7 @@
 package errorhanding
 
+import scala.{Option => _, Either => _}
+
 import math._
 
 /**
