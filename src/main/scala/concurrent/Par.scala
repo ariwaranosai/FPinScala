@@ -44,6 +44,8 @@ object Par {
     override def call(): A = a(es).get
   })
 
+  def delay[A](fa: => Par[A]): Par[A] = es => fa(es)
+
   def map[A, B](pa: Par[A])(f: A => B): Par[B] =
     map2(pa, unit())((a, _) => f(a))
 
@@ -97,12 +99,15 @@ object Par {
       map2(reduce(l)(f, threshold), reduce(r)(f, threshold))(f)
     }
   }
+
+  def equal[A](es: ExecutorService)(pa: Par[A], pb: Par[A]): Boolean =
+    pa(es).get == pb(es).get
 }
 
 object ParTest {
   import Par._
 
-  implicit val executor = Executors.newScheduledThreadPool(8)
+  implicit val executor = Executors.newSingleThreadExecutor()
 
   def maxNum(a: List[Int]): Int = {
     run(reduce(a)(_ max _)).get
