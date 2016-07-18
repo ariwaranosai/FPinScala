@@ -102,6 +102,9 @@ sealed trait Stream[+A] { self =>
       case _ => None
     }
 
+  def zip[B](s2: Stream[B]): Stream[(A, B)] =
+    self.zipWith(s2)((_, _))
+
   def zipWith[B,C](s2: Stream[B])(f: (A,B) => C): Stream[C] =
     unfold((self, s2)) {
       case (Cons(h1, tl1), Cons(h2, tl2)) => Some((f(h1(), h2()), (tl1(), tl2())))

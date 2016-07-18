@@ -51,6 +51,11 @@ object State {
     x <- get
     _ <- set(f(x))
   } yield ()
+
+  type Rand[+A] = State[RNG, A]
+
+  def int: Rand[Int] = State[RNG, Int](_.nextInt)
+  def double: Rand[Double] = State[RNG, Double](RNG.double)
 }
 
 object RNG {
