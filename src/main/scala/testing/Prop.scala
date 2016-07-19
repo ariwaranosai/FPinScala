@@ -6,7 +6,8 @@ package testing
   */
 
 import Prop._
-import state.RNG
+import Gen._
+import state._
 import lazying.Stream
 
 sealed trait Result {
@@ -22,31 +23,100 @@ case class Falsified(failure: FailedCase,
   override def isFalsified: Boolean = true
 }
 
-case class Prop(run: (TestCast, RNG) => Result) { self =>}
+case object Proved extends Result {
+  override def isFalsified: Boolean = false
+}
+
+case class Prop(run: (MaxSize, TestCase, RNG) => Result) { self =>
+  def &&(p: Prop): Prop = Prop {(max, test, rng) =>
+    run(max, test, rng) match {
+      case Passed => p.run(max, test, rng)
+      case x => x
+    }
+  }
+
+  def ||(p: Prop): Prop = Prop { (max, test, rng) =>
+    run(max, test, rng) match {
+      case Passed => Passed
+      case Falsified(f, _) => p.tag(f).run(max, test, rng)
+    }
+
+  }
+
+  def tag(msg: String) = Prop { (max, n, rng) =>
+    run(max,n,rng) match {
+      case Falsified(e, c) => Falsified(msg + "\n" + e, c)
+      case x => x
+    }
+  }
+
+}
 
 object Prop {
-  type TestCast = Int
+  type TestCase = Int
   type SuccessCount = Int
   type FailedCase = String
+  type MaxSize = Int
+
+  def check(p: => Boolean): Prop = Prop {(_, _, _) =>
+    if(p) Proved else Falsified("()", 0)
+  }
 
   def randomStream[A](g: Gen[A])(rng: RNG): Stream[A] =
     Stream.unfold(rng)(rng => Some(g.sample.run(rng)))
 
   def forAll[A](as: Gen[A])(f: A => Boolean): Prop = Prop {
-    (n, rng) => randomStream(as)(rng).zip(Stream.from(0)).take(n).map {
+    (_, n,rng) => randomStream(as)(rng).zip(Stream.from(0)).take(n).map {
       case (a, i) => try {
         if (f(a)) Passed else Falsified(a.toString, i)
-      } catch {case e: Exception => Falsified(buildMsg(a, e), i)}
+      } catch { case e: Exception => Falsified(buildMsg(a, e), i) }
     }.find(_.isFalsified).getOrElse(Passed)
   }
+
+  def forAll[A](g: SGen[A])(f: A => Boolean): Prop = Prop {
+    (max,n,rng) =>
+      val casesPerSize = (n - 1) / max + 1
+      val props: Stream[Prop] =
+        Stream.from(0).take((n min max) + 1).map(i => forAll(g.forSize(i))(f))
+      val prop: Prop =
+        props.map(p => Prop { (max, n, rng) =>
+          p.run(max, casesPerSize, rng)
+        }).toList.reduce(_ && _)
+      prop.run(max,n,rng)
+  }
+
 
   def buildMsg[A](s: A, e: Exception): String =
     s"test case: $s\n" +
     s"generated an exception: ${e.getMessage}\n" +
     s"stack trace:\n ${e.getStackTrace.mkString("\n")}"
+
+  def run(p: Prop, maxSize: MaxSize = 100,
+          testCase: TestCase = 100,
+          rng: RNG = SimpleRNG(System.currentTimeMillis())): Unit =
+    p.run(maxSize, testCase, rng) match {
+      case Falsified(msg, n) =>
+        println(s"! Falsified after $n passed tests:\n $msg.")
+      case Passed =>
+        println(s"+ OK, passed $testCase tests.")
+      case Proved =>
+        println("+OK, proved property.")
+    }
 }
 
 object PropTest {
   def main(args: Array[String]): Unit = {
+    val reverseProp = forAll(Gen.choose(0, 1000).listOfN(Gen.choose(10, 20)))(ns => ns.reverse.lastOption == ns.headOption)
+    run(reverseProp)
+
+    val smallInt = Gen.choose(-10, 10)
+
+    val maxProp = forAll(listOf1(smallInt)) {
+      ns =>
+        val max = ns.max
+        !ns.exists(_ > max)
+    }
+
+    run(maxProp)
   }
 }

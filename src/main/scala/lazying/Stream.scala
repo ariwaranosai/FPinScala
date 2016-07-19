@@ -198,5 +198,7 @@ object StreamTest {
     assert(!t.hasSubsequence(from(2).take(4)))
 
     assert(t.scanRight[Int](0)(_ + _).toList == List(6, 5, 3, 0))
+
+    assert(Stream.from(0).take(3).map(_ + 1).toList == List(1, 2, 3))
   }
 }
