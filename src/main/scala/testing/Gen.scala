@@ -15,10 +15,16 @@ case class Gen[+A](sample: State[RNG, A]) { self =>
   def map[B](f: A => B): Gen[B] =
     Gen[B](sample.map(f))
 
+  def map2[B, C](other: Gen[B])(f: (A, B) => C): Gen[C] =
+    Gen[C](sample.map2(other.sample)(f))
+
   def listOfN(size: Gen[Int]): Gen[List[A]] = for {
     x <- size
     l <- Gen.listOfN(x, this)
   } yield l
+
+  def **[B](g: Gen[B]): Gen[(A, B)] =
+    (this map2 g) ((_, _))
 
   def unsized: SGen[A] = SGen {_ => this}
 }
@@ -30,6 +36,9 @@ case class SGen[+A](forSize: Int => Gen[A]) {
     SGen[B](x => forSize(x).flatMap(y => f(y).forSize(x)))
 
   def map[B](f: A => B): SGen[B] = SGen(x => forSize(x).map(f))
+
+  def map2[B, C](other: SGen[B])(f: (A, B) => C): SGen[C] =
+    SGen(x => forSize(x).map2(other.forSize(x))(f))
 }
 
 object Gen {

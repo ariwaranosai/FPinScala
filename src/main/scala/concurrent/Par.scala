@@ -100,8 +100,11 @@ object Par {
     }
   }
 
-  def equal[A](es: ExecutorService)(pa: Par[A], pb: Par[A]): Boolean =
-    pa(es).get == pb(es).get
+  //def equal[A](pa: Par[A], pb: Par[A])(implicit es: ExecutorService): Boolean =
+   // pa(es).get == pb(es).get
+
+  def equal[A](pa: Par[A], pb: Par[A]): Par[Boolean] =
+    map2(pa, pb)(_ == _)
 }
 
 object ParTest {

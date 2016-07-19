@@ -5,10 +5,15 @@ package testing
   *
   */
 
+import java.util.concurrent.Executors
+
 import Prop._
+import ParProp._
 import Gen._
 import state._
 import lazying.Stream
+import concurrent.Par
+import concurrent.Par.Par
 
 sealed trait Result {
   def isFalsified: Boolean
@@ -31,14 +36,15 @@ case class Prop(run: (MaxSize, TestCase, RNG) => Result) { self =>
   def &&(p: Prop): Prop = Prop {(max, test, rng) =>
     run(max, test, rng) match {
       case Passed => p.run(max, test, rng)
+      case Proved => p.run(max, test, rng)
       case x => x
     }
   }
 
   def ||(p: Prop): Prop = Prop { (max, test, rng) =>
     run(max, test, rng) match {
-      case Passed => Passed
       case Falsified(f, _) => p.tag(f).run(max, test, rng)
+      case x => x
     }
 
   }
@@ -100,12 +106,28 @@ object Prop {
       case Passed =>
         println(s"+ OK, passed $testCase tests.")
       case Proved =>
-        println("+OK, proved property.")
+        println("+ OK, proved property.")
     }
+
+}
+
+object ParProp {
+  val S = weighted(
+    choose(1, 4).map(Executors.newFixedThreadPool) -> 0.75,
+    unit(Executors.newCachedThreadPool) -> 0.25
+  )
+
+  def forAllPar[A](g: Gen[A])(f: A => Par[Boolean]): Prop =
+    forAll(S ** g) { case (s, a) => f(a)(s).get}
+
+  def checkPar(p: => Par[Boolean]): Prop =
+    forAllPar(unit(()))(_ => p)
 }
 
 object PropTest {
   def main(args: Array[String]): Unit = {
+    implicit val executor = Executors.newSingleThreadExecutor()
+
     val reverseProp = forAll(Gen.choose(0, 1000).listOfN(Gen.choose(10, 20)))(ns => ns.reverse.lastOption == ns.headOption)
     run(reverseProp)
 
@@ -116,7 +138,17 @@ object PropTest {
         val max = ns.max
         !ns.exists(_ > max)
     }
-
     run(maxProp)
+
+    val trivalProp = check(1 == 1)
+    run(trivalProp)
+
+    val p3 = checkPar {
+      Par.equal(Par.map(Par.unit(1))(_ + 1),
+        Par.unit(2))
+    }
+
+    run(p3)
+
   }
 }
