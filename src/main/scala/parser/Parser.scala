@@ -21,6 +21,7 @@ trait Parsers[ParseError, Parser[+_]] { self =>
   implicit def string(s: String): Parser[String]
   implicit def regex(r: Regex): Parser[String]
   def unit[A](a: A): Parser[A]
+  // return the string resolved by p
   def slice[A](p: Parser[A]): Parser[String]
   def product[A, B](p: Parser[A], p2: => Parser[B]): Parser[(A, B)]
   def or[A](p1: Parser[A], p2: => Parser[A]): Parser[A]
@@ -50,13 +51,22 @@ trait Parsers[ParseError, Parser[+_]] { self =>
     def **[B](p2: Parser[B]): Parser[(A, B)] = self.product(p, p2)
   }
 
+  def digits: Parser[String] = "\\d+".r
+  def whitespace: Parser[String] = "\\s*".r
+  def skipL[B](p: Parser[Any], p2: => Parser[B]): Parser[B] =
+    map2(slice(p), p2)((_, b) => b)
+  def skipR[A](p: Parser[A], p2: => Parser[Any]): Parser[A] =
+    map2(p, slice(p2))((a, b) => a)
+  def opt[A](p: Parser[A]): Parser[Option[A]] =
+    p.map(Some(_)) or succeed(None)
+
+
   object Laws {
     def equal[A](p1: Parser[A], p2: Parser[A])(in: Gen[String]): Prop =
       forAll(in)(s => run(p1)(s) == run(p2)(s))
 
     def mapLaw[A](p: Parser[A])(in: Gen[String]): Prop =
       equal(p, p.map(a => a))(in)
-
   }
 
 }
