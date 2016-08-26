@@ -66,4 +66,22 @@ object Monad {
       }
     override def unit[A](a: A): Id[A] = Id(a)
   }
+
+
+  case class Reader[R, A](run: R => A)
+  object Reader {
+    def readerMonad[R] = new Monad[({type f[x] = Reader[R, x]})#f] {
+      override def unit[A](a: A): Reader[R, A] = Reader[R, A](_ => a)
+      override def flatMap[A, B](ma: Reader[R, A])(f: (A) => Reader[R, B]): Reader[R, B] =
+        Reader[R, B]((x: R) => f(ma.run(x)).run(x))
+    }
+  }
+
+  implicit class toMonadOps[F[_], A](fa: F[A])(implicit val m: Monad[F]) {
+    def flatMap[B](f: A => F[B]):F[B] = m.flatMap(fa)(f)
+    def unit(a: A): F[A] = m.unit(a)
+    def map[B](f: A => B): F[B] = m.map(fa)(f)
+  }
+
+  // todo sequence join replicateM
 }
