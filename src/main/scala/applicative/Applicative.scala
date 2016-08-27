@@ -1,6 +1,9 @@
 package applicative
 
 import monad.Functor
+import monad.Monad.Id
+import monoid.Monoid
+import monoid.Monoid.Foldable
 
 /**
   * Created by ariwaranosai on 16/8/27.
@@ -49,6 +52,9 @@ trait Applicative[F[_]] extends Functor[F] { self =>
 
   def sequence[A](fas: List[F[A]]): F[List[A]] =
     traverse(fas)(identity)
+
+  def sequence[K, V](ofa: Map[K, F[V]]): F[Map[K, V]] =
+    ofa.foldRight(unit(Map[K, V]()))((x, fa) => map2(fa, x._2)((ys, y) => ys.updated(x._1, y)))
 
   def replicateM[A](n: Int, fa: F[A]): F[List[A]] =
     traverse((0 to n).toList)(_ => fa)
@@ -106,4 +112,36 @@ object Monad {
       }
     override def unit[A](a: => A): Either[E, A] = Right(a)
   }
+
+}
+
+trait Traverse[F[_]] extends Functor[F] with Foldable[F] { self =>
+  def traverse[G[_]: Applicative, A, B](fa: F[A])(f: A => G[B]): G[F[B]] =
+    sequence(map(fa)(f))
+  def sequence[G[_]: Applicative, A](fga: F[G[A]]): G[F[A]] =
+    traverse(fga)(identity)
+
+  type Id[A] = A
+  implicit val idMonad = new Monad[Id] {
+    def unit[A](a: => A): Id[A] = a
+    override def flatMap[A, B](fa: Id[A])(f: (A) => Id[B]): Id[B] = f(fa)
+  }
+
+  override def map[A, B](fa: F[A])(f: (A) => B): F[B] =
+    traverse[Id, A, B](fa)(x => idMonad.unit(f(x)))
+
+  type Const[M, B] = M
+
+  implicit def monoidApplicative[M](M: Monoid[M]) = new Applicative[({type f[x] = Const[M, x]})#f] {
+      override def unit[A](a: => A): Const[M, A] = M.zero
+      override def map2[A, B, C](fa: Const[M, A], fb: Const[M, B])(f: (A, B) => C): Const[M, C] =
+        M.op(fa, fb)
+    }
+
+  override def foldMap[A, B](as: F[A])(f: (A) => B)(m: Monoid[B]): B =
+    traverse[({type f[x] = Const[B, x]})#f, A, Nothing](as)(f)(monoidApplicative(m))
+
+}
+
+object Traverse {
 }
