@@ -95,8 +95,6 @@ trait Monad[F[_]] extends Applicative[F] {
 trait Monadic[F[_], A] {
   val F: Monad[F]
 
-  import F._
-
   def get: F[A]
 
   private val a = get
