@@ -131,7 +131,106 @@ object IO1 {
 
 }
 
+object IO2 {
+  sealed trait IO[A] {
+    def flatMap[B](f: A => IO[B]): IO[B] = FlatMap(this,f)
+    def map[B](f: A => B): IO[B] = flatMap(f andThen (Return(_)))
+  }
+
+  case class Return[A](a: A) extends IO[A]
+  case class Suspend[A](resume: () => A) extends IO[A]
+  case class FlatMap[A, B](sub: IO[A], k: A => IO[B]) extends IO[B]
+
+  object IO extends Monad[IO] {
+    def apply[A](a: => A): IO[A] = unit(a)
+    def unit[A](a: => A): IO[A] = Return(a)
+    def flatMap[A, B](a: IO[A])(f: A => IO[B]) = a flatMap f
+    def suspend[A](a: => IO[A]) = Suspend(() => ()).flatMap(_ => a)
+
+    def ref[A](a: A): IO[IORef[A]] = IO {
+      new IORef(a)
+    }
+
+    sealed class IORef[A](var value: A) {
+      def set(a: A): IO[A] = IO {
+        value = a
+        a
+      }
+
+      def get: IO[A] = IO { value }
+
+      def modify(f: A => A): IO[A] = for {
+        a <- get
+        v <- set(f(a))
+      } yield v
+    }
+  }
+
+  def PrintLine(s: String): IO[Unit] =
+    Suspend(() => Return(println(s)))
+
+  def ReadLine: IO[String] =
+    IO.suspend(Return(readLine()))
+
+  def readInt = ReadLine map (_.toInt)
+
+  def readInts = readInt ** readInt
+
+  import IO._
+
+  def factorial(n: Int): IO[Int] = for {
+    acc <- ref(1)
+    _ <- foreachM(1 to n toStream)(i => acc.modify(_ * i).skip)
+    result <- acc.get
+  } yield result
+
+
+  val helpstring =
+    """
+      | The Amazing Factorial REPL, v2.0
+      | q - quit
+      | <number> - compute the factorial of the given number
+      | <anything else> - bomb with horrible error
+    """.trim.stripMargin
+
+  import IO._
+
+  def factorialREPL: IO[Unit] = sequence_(
+    PrintLine(helpstring)
+    ,
+    doWhile {
+      ReadLine
+    } { line =>
+      val ok = line != "q"
+      when(ok) {
+        for {
+          n <- factorial(line.toInt)
+          _ <- PrintLine("factorial: " + n)
+        } yield ()
+      }
+    }
+  )
+
+  def readAndAdd: IO[Unit] = for {
+    _ <- PrintLine("Input:")
+    x <- readInt
+    y <- factorial(x)
+    _ <- PrintLine(y.toString)
+  } yield ()
+
+  @annotation.tailrec
+  def run[A](io: IO[A]): A = io match {
+    case Return(a) => a
+    case Suspend(r) => r()
+    case FlatMap(x, f) => x match {
+      case Return(a) => run(f(a))
+      case Suspend(r) => run(f(r()))
+      case FlatMap(y, g) => run(y flatMap (a => g(a) flatMap f))
+    }
+  }
+
+}
+
 object Main extends App {
-  import IO1.Main.factorialREPL
-  factorialREPL.run
+  IO2.run(IO2.factorialREPL)
 }
